@@ -1,3 +1,31 @@
+/*********************************************************************************************************************
+ * Předmět:     Počítačové komunikace a sítě
+ * Projekt:     Sniffer packetů
+ * Datum:       4/2021
+ * Vypracoval:  Filip Jahn
+ * Login:       xjahnf00
+ *
+ * *******************************************************************************************************************
+ * Zadání:
+ * Navrhněte a implementujte síťový analyzátor v C/C++/C#,
+ * který bude schopný na určitém síťovém rozhraním zachytávat a filtrovat pakety.
+ *
+ * *******************************************************************************************************************
+ * Spuštění:
+ * ./ipk-sniffer [-i rozhraní | --interface rozhraní] {-p port} {[--tcp|-t] [--udp|-u] [--arp] [--icmp] } {-n num}
+ * -> Složené závorky {} znamenají, že volba je nepovinná, oproti tomu [] znamená povinnou volbu.
+ *      -i eth0 (právě jedno rozhraní, na kterém se bude poslouchat)
+ *      -p 23 (bude filtrování paketů na daném rozhraní podle portu)
+ *      -t nebo --tcp (bude zobrazovat pouze TCP pakety)
+ *      -u nebo --udp (bude zobrazovat pouze UDP pakety)
+ *      --icmp (bude zobrazovat pouze ICMPv4 a ICMPv6 pakety)
+ *      --arp (bude zobrazovat pouze ARP rámce)
+ *      -> Pokud nebudou konkrétní protokoly specifikovány, uvažují se k tisknutí všechny
+ *      -n 10 (určuje počet paketů, které se mají zobrazit)
+ *
+ * *******************************************************************************************************************
+ */
+
 #include <stdio.h>
 #include <pcap.h>
 #include <getopt.h>
@@ -23,6 +51,8 @@
 #define IPV6_PROT   1
 #define IPV6_HDR    40
 
+/***********************/
+/** Globalni promenne **/
 // Boolean hodnoty, ktere protokoly se maji zobrazovat
 bool tcp = false;
 bool udp = false;
@@ -31,15 +61,18 @@ bool icmp = false;
 
 // Rozhranni, na kterem se posloucha
 char* device;
+
 // Port
-int port = 0;
+char* port;
+
 // Pocet paketu, kolik se jich ma zobrazit
 // Defaultne 1
 int num_of_packets = 1;
-// Error buffer, slouzi pro ukladani pripadnych erroru
-char errbuf[PCAP_ERRBUF_SIZE];
+/***********************/
 
-
+/**
+ * Vypsani rozhranni, na kterych se da packety odchytavat.
+ */
 void printInterface()
 {
     // Prevzato a upraveno z: http://embeddedguruji.blogspot.com/2014/01/pcapfindalldevs-example.html
@@ -50,11 +83,10 @@ void printInterface()
     {
         printf("[ERR]: Nenasel jsem zadna zarizeni.\n");
     }
-
-    printf("List veskerych rozhranni je nasledujici:\n");
+    printf("Seznam veskerych rozhranni je nasledujici:\n");
     for(temp=interfaces;temp;temp=temp->next)
     {
-        printf("%d  :  %s\n",i++,temp->name);
+        printf("%d:  %s\n",i++,temp->name);
     }
     exit(1);
 }
@@ -121,11 +153,15 @@ void parseArguments(int argc, char **argv)
                 break;
 
             case 'p':
-                if ((port = atoi(optarg)) == 0 || port < 0){
+                if (atoi(optarg) < 0){
                     fprintf(stderr, "[ERR]: Parametru -p lze priradit pouze int.\n");
                     exit(1);
                 }
-                //printf("%i",port);
+                else{
+                    //printf("here0\n");
+                    port = optarg;
+                }
+                //printf("%s",port);
                 break;
 
             case 't':
@@ -163,40 +199,22 @@ void parseArguments(int argc, char **argv)
     return;
 }
 
-// Zdroj: https://stackoverflow.com/questions/12970439/gcc-error-undefined-reference-to-itoa
-char *my_itoa(int num, char *str)
-{
-    if(str == NULL)
-    {
-        return NULL;
-    }
-    sprintf(str, "%d", num);
-    return str;
-}
-
 /**
  * Naplni pole filter_exp retezcem.
  * Ve funkci pcap_compile(), kam retezec posilame, probehne zpracovani tohoto retezce
- * a tim se nam vrati spravna struktura. 
+ * a tim se nam vrati spravna struktura.
+ * @param str Retezec, ktery se ma naplnit
  */
 std::string fillFilterStr(std::string str)
 {
     bool atLeastOneIsIn = false;
-    char *buffer;
-    //printf("%d\n", port);
-    if (port != 0){
-        if(my_itoa(port, buffer) == NULL){
-            fprintf(stderr, "Nepodarilo se prekonvertovat port na string.");
-            exit(1);
-        }
+    if (strcmp(port, "0") != 0){
         str.append("port ");
-        str.append(buffer);
-        //printf("%s\n", str);
+        str.append(port);
+        str.append(" and ");
     }
-    //printf("178: %s\n", str);
     if(tcp || icmp || udp || arp)
         str.append(" (");
-    //printf("181: %s\n", str);
     if(tcp){
         str.append("tcp");
         atLeastOneIsIn = true;
@@ -221,10 +239,13 @@ std::string fillFilterStr(std::string str)
     }
     if (atLeastOneIsIn)
         str.append(")");
-    //printf("%s\n", str.c_str());
     return str;
 }
 
+/**
+ * Ziska momentalni cas a ve spravnem formatu vraci.
+ * @return Retezec, ve kterem je ulozen cas zachyceni packetu
+ */
 std::string time_rfc3339()
 {
     char cstr[80];
@@ -239,6 +260,12 @@ std::string time_rfc3339()
     return s;
 }
 
+/**
+ * Vypsani prave casti vypisu v ascii podobe.
+ * Pokud nejsou znaky tisknutelne, vypiseme misto nich tecku.
+ * @param ascii_str Pole znaku, ktere se maji vypsat
+ * @param charsToPrint Pocet znaku, kolik se jich ma vypsat
+ */
 void print_char_ascii(char ascii_str[17], int charsToPrint)
 {
     printf("\t");
@@ -252,6 +279,13 @@ void print_char_ascii(char ascii_str[17], int charsToPrint)
     }
 }
 
+/**
+ * Funkce pro vypis dat z packetu.
+ * Prochazeni dat z packetu, kde kazdy znak vypisujeme v hexa podobe a ukladame
+ * do pole ascii_str dany znak pro pozdejsi vypsani ve funkci print_char_ascii().
+ * @param packet Prijaty packet, ktery se ma vypsat
+ * @param length Delka packetu. Prochazime ho od zacatku do konce
+ */
 void print_packet_body( const u_char *packet, bpf_u_int32 length)
 {
     char ascii_str[17] = "";
@@ -298,8 +332,15 @@ void print_packet_body( const u_char *packet, bpf_u_int32 length)
     printf("\n");
 }
 
-void icmp_v4(const u_char *packetWoEther,  const u_char *packet, bpf_u_int32 lengthOfPacket,
-               std::string currentTime, int protocol)
+/**
+ * Zpracovani a vypsani protokolu icmp pro ipv4.
+ * Ze zacatku pretypovani packetu na ip strukturu, ziskani ip adres, vypsani.
+ * @param packetWoEther Packet bez ethernetove hlavicky
+ * @param packet Obdrzeny packet
+ * @param lengthOfPacket Delka packetu
+ * @param currentTime Cas obdrzeni packetu
+ */
+void icmp_v4(const u_char *packetWoEther,  const u_char *packet, bpf_u_int32 lengthOfPacket, std::string currentTime)
 {
     printf("\n(ICMPv4)");
     // https://unix.superglobalmegacorp.com/Net2/newsrc/netinet/ip.h.html
@@ -312,8 +353,16 @@ void icmp_v4(const u_char *packetWoEther,  const u_char *packet, bpf_u_int32 len
            destIpAddr.c_str(), lengthOfPacket);
     print_packet_body(packet, lengthOfPacket);
 }
-void icmp_v6(const u_char *packetWoEther,  const u_char *packet, bpf_u_int32 lengthOfPacket,
-             std::string currentTime)
+
+/**
+ * Zpracovani a vypsani protokolu icmp pro ipv6.
+ * Ze zacatku pretypovani packetu na ip6 strukturu, ziskani ip adres, vypsani.
+ * @param packetWoEther Packet bez ethernetove hlavicky
+ * @param packet Obdrzeny packet
+ * @param lengthOfPacket Delka packetu
+ * @param currentTime Cas obdrzeni packetu
+ */
+void icmp_v6(const u_char *packetWoEther,  const u_char *packet, bpf_u_int32 lengthOfPacket, std::string currentTime)
 {
     printf("\n(ICMPv6)");
     // https://unix.superglobalmegacorp.com/Net2/newsrc/netinet/ip.h.html
@@ -326,6 +375,17 @@ void icmp_v6(const u_char *packetWoEther,  const u_char *packet, bpf_u_int32 len
     print_packet_body(packet, lengthOfPacket);
 }
 
+/**
+ * Zpracovani a vypsani protokolu udp pro ipv4.
+ * Ze zacatku pretypovani packetu na ip strukturu, pote ziskani ip adres,
+ * posunuti se v packetu o delku hlavicky, pretypovani na upd strukturu,
+ * zjisteni portu a nasledne vypsani.
+ * @param packetWoEther Packet bez ethernetove hlavicky
+ * @param packet Obdrzeny packet
+ * @param lengthOfPacket Delka packetu
+ * @param currentTime Cas obdrzeni packetu
+ * @param ipLen Delka hlavicky, o kterou se mame posunout pro ziskani portu
+ */
 void udp_v4(const u_char *packetWoEther, const u_char *packet, bpf_u_int32 lengthOfPacket,
               std::string currentTime, unsigned int ipLen)
 {
@@ -348,6 +408,16 @@ void udp_v4(const u_char *packetWoEther, const u_char *packet, bpf_u_int32 lengt
     print_packet_body(packet, lengthOfPacket);
 }
 
+/**
+ * Zpracovani a vypsani protokolu udp pro ipv6.
+ * Ze zacatku pretypovani packetu na ip6 strukturu, pote ziskani ip adres,
+ * posunuti se v packetu o delku hlavicky, pretypovani na upd strukturu,
+ * zjisteni portu a nasledne vypsani.
+ * @param packetWoEther Packet bez ethernetove hlavicky
+ * @param packet Obdrzeny packet
+ * @param lengthOfPacket Delka packetu
+ * @param currentTime Cas obdrzeni packetu
+ */
 void udp_v6(const u_char *packetWoEther, const u_char *packet, bpf_u_int32 lengthOfPacket, std::string currentTime)
 {
     printf("\n(UDPv6)");
@@ -368,6 +438,17 @@ void udp_v6(const u_char *packetWoEther, const u_char *packet, bpf_u_int32 lengt
     print_packet_body(packet, lengthOfPacket);
 }
 
+/**
+ * Zpracovani a vypsani protokolu tcp pro ipv4.
+ * Ze zacatku pretypovani packetu na ip strukturu, pote ziskani ip adres,
+ * posunuti se v packetu o delku hlavicky, pretypovani na tcp strukturu,
+ * zjisteni portu a nasledne vypsani.
+ * @param packetWoEther Packet bez ethernetove hlavicky
+ * @param packet Obdrzeny packet
+ * @param lengthOfPacket Delka packetu
+ * @param currentTime Cas obdrzeni packetu
+ * @param ipLen Delka hlavicky, o kterou se mame posunout pro ziskani portu
+ */
 void tcp_v4(const u_char *packetWoEther, const u_char *packet, bpf_u_int32 lengthOfPacket,
               std::string currentTime, unsigned int ipLen)
 {
@@ -390,6 +471,16 @@ void tcp_v4(const u_char *packetWoEther, const u_char *packet, bpf_u_int32 lengt
     print_packet_body(packet, lengthOfPacket);
 }
 
+/**
+ * Zpracovani a vypsani protokolu tcp pro ipv6.
+ * Ze zacatku pretypovani packetu na ip6 strukturu, pote ziskani ip adres,
+ * posunuti se v packetu o delku hlavicky, pretypovani na tcp strukturu,
+ * zjisteni portu a nasledne vypsani.
+ * @param packetWoEther Packet bez ethernetove hlavicky
+ * @param packet Obdrzeny packet
+ * @param lengthOfPacket Delka packetu
+ * @param currentTime Cas obdrzeni packetu
+ */
 void tcp_v6(const u_char *packetWoEther, const u_char *packet, bpf_u_int32 lengthOfPacket, std::string currentTime)
 {
     printf("\n(TCPv6)");
@@ -410,6 +501,14 @@ void tcp_v6(const u_char *packetWoEther, const u_char *packet, bpf_u_int32 lengt
     print_packet_body(packet, lengthOfPacket);
 }
 
+/**
+ * Hlavni funkce, vola se vzdy pri prijeti packetu.
+ * Zpracovani ethernetove hlavicky, zjisteni, ktery protokol se vyuziva a
+ * nasledne volani funkce se zpracovanim daneho protokolu nad timto packetem.
+ * @param args Argumenty, ktere nevyuzivam. MUSI zde byt.
+ * @param header Vyuziti pro zjisteni delky celeho packetu
+ * @param packet Odchyceny packet
+ */
 void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 {
     // https://unix.superglobalmegacorp.com/Net2/newsrc/netinet/if_ether.h.html
@@ -429,7 +528,7 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
         switch (ip_header->protocol) {
             // ICMP
             case 1:
-                icmp_v4(packet_ip, packet, header->len, currentTime, IPV4_PROT);
+                icmp_v4(packet_ip, packet, header->len, currentTime);
                 break;
 
             // TCP + UDP
@@ -525,6 +624,8 @@ int main (int argc, char **argv)
     std::string filter_exp = "";    // https://bit.ly/3giiyKP
     filter_exp = fillFilterStr(filter_exp);
     bpf_u_int32 net;
+    // Error buffer, slouzi pro ukladani pripadnych erroru
+    char errbuf[PCAP_ERRBUF_SIZE];
 
     // Otevreni zarizeni pro sledovani packetu
     handle = pcap_open_live(device, BUFSIZ, 1, 1000, errbuf);
