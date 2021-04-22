@@ -51,7 +51,7 @@ void printInterface()
         printf("[ERR]: Nenasel jsem zadna zarizeni.\n");
     }
 
-    printf("\nList veskerych rozhranni je nasledujici:\n");
+    printf("List veskerych rozhranni je nasledujici:\n");
     for(temp=interfaces;temp;temp=temp->next)
     {
         printf("%d  :  %s\n",i++,temp->name);
@@ -392,7 +392,7 @@ void tcp_v4(const u_char *packetWoEther, const u_char *packet, bpf_u_int32 lengt
 
 void tcp_v6(const u_char *packetWoEther, const u_char *packet, bpf_u_int32 lengthOfPacket, std::string currentTime)
 {
-    printf("TCPv6\n");
+    printf("\n(TCPv6)");
     // IP source/dest
     struct ip6_hdr* ip6hdr_var = (struct ip6_hdr*)packetWoEther; //pretypovani na IP hlavicku, ze ktere ziskame adresy
     char srcIpAddr [INET6_ADDRSTRLEN];
@@ -512,6 +512,10 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
 
 int main (int argc, char **argv)
 {
+    if (argc == 1){
+        printInterface();
+        exit(1);
+    }
     // Parsovani argumentu
     parseArguments(argc, argv);
 
