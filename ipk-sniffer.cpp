@@ -44,7 +44,7 @@
 #include <netinet/ip6.h>        //ipv6 hlavicka
 //#include <math.h>               //ceil()
 
-#define ETH_HEADER  14
+#define ETH_HDR  14
 //#define IPV4_PROT   0
 //#define IPV6_PROT   1
 #define IPV6_HDR    40
@@ -124,7 +124,7 @@ void parse_arguments(int argc, char **argv)
                 }
                 else{
                     fprintf(stderr, "[ERR]: Zadal jste spatne argumenty.\n");
-                    exit(1);
+                    exit(3);
                 }
             case 0:
                 if (longOpts[index].flag != 0)
@@ -135,13 +135,13 @@ void parse_arguments(int argc, char **argv)
                     icmp = true;
                 else{
                     fprintf(stderr, "[ERR]: Zadal jste spatne argumenty.\n");
-                    exit(1);
+                    exit(3);
                 }
                 break;
             case 'i':
                 if (optarg == NULL || (strcmp(optarg, "-p") == 0)){
                     fprintf(stderr, "[ERR]: Zadal jste spatne argumenty.\n");
-                    exit(1);
+                    exit(3);
                 }
                 else{
                     device = optarg;
@@ -152,7 +152,7 @@ void parse_arguments(int argc, char **argv)
             case 'p':
                 if (atoi(optarg) < 0){
                     fprintf(stderr, "[ERR]: Parametru -p lze priradit pouze int.\n");
-                    exit(1);
+                    exit(3);
                 }
                 else{
                     port = optarg;
@@ -170,18 +170,18 @@ void parse_arguments(int argc, char **argv)
             case 'n':
                 if ((numOfPackets = atoi(optarg)) == 0){
                     fprintf(stderr, "[ERR]: Parametru -n lze priradit pouze int.\n");
-                    exit(1);
+                    exit(3);
                 }
                 break;
 
             default:
                 fprintf(stderr, "[ERR]: Zadal jste spatne argumenty.\n");
-                exit(1);
+                exit(3);
         }
     }
     if (!checkInterface){
         fprintf(stderr, "[ERR]: Zadal jste spatne argumenty.\n");
-        exit(1);
+        exit(3);
     }
 
     if (!tcp && !udp && !arp && !icmp){
@@ -388,7 +388,7 @@ void udp_v4(const u_char *packetWoEther, const u_char *packet, bpf_u_int32 lengt
     struct ip *iphdrVar = (struct ip *) packetWoEther;
     srcIpAddr.append(inet_ntoa(iphdrVar->ip_src));
     destIpAddr.append(inet_ntoa(iphdrVar->ip_dst));
-    const u_char *transportProtocolHdr = packet + ETH_HEADER + ipLen;
+    const u_char *transportProtocolHdr = packet + ETH_HDR + ipLen;
 
     // https://unix.superglobalmegacorp.com/Net2/newsrc/netinet/udp.h.html
     struct udphdr *udphdrVar = (struct udphdr *) transportProtocolHdr; // udp struktura
@@ -418,7 +418,7 @@ void udp_v6(const u_char *packetWoEther, const u_char *packet, bpf_u_int32 lengt
     char destIpAddr [INET6_ADDRSTRLEN];
     inet_ntop(AF_INET6, &(ip6hdrVar->ip6_src), srcIpAddr, INET6_ADDRSTRLEN);
     inet_ntop(AF_INET6, &(ip6hdrVar->ip6_dst), destIpAddr, INET6_ADDRSTRLEN);
-    const u_char *transportProtocolHdr = packet + ETH_HEADER + IPV6_HDR;
+    const u_char *transportProtocolHdr = packet + ETH_HDR + IPV6_HDR;
 
     // https://unix.superglobalmegacorp.com/Net2/newsrc/netinet/udp.h.html
     struct udphdr *udphdrVar = (struct udphdr *) transportProtocolHdr; // udp struktura
@@ -451,7 +451,7 @@ void tcp_v4(const u_char *packetWoEther, const u_char *packet, bpf_u_int32 lengt
     struct ip* iphdrVar = (struct ip*)packetWoEther;
     srcIpAddr.append(inet_ntoa(iphdrVar->ip_src));
     destIpAddr.append(inet_ntoa(iphdrVar->ip_dst));
-    const u_char *transportProtocolHdr = packet + ETH_HEADER + ipLen;
+    const u_char *transportProtocolHdr = packet + ETH_HDR + ipLen;
 
     // https://unix.superglobalmegacorp.com/BSD4.4/newsrc/netinet/tcp.h.html
     struct tcphdr* tcphdrVar = (struct tcphdr*)transportProtocolHdr; // udp struktura
@@ -481,7 +481,7 @@ void tcp_v6(const u_char *packetWoEther, const u_char *packet, bpf_u_int32 lengt
     char destIpAddr [INET6_ADDRSTRLEN];
     inet_ntop(AF_INET6, &(ip6hdrVar->ip6_src), srcIpAddr, INET6_ADDRSTRLEN);
     inet_ntop(AF_INET6, &(ip6hdrVar->ip6_dst), destIpAddr, INET6_ADDRSTRLEN);
-    const u_char *transportProtocolHdr = packet + ETH_HEADER + IPV6_HDR;
+    const u_char *transportProtocolHdr = packet + ETH_HDR + IPV6_HDR;
 
     // https://unix.superglobalmegacorp.com/Net2/newsrc/netinet/udp.h.html
     struct tcphdr* tcphdrVar = (struct tcphdr*)transportProtocolHdr; // udp struktura
@@ -508,7 +508,7 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
     // Aktualni cas prijeti paketu
     std::string currentTime = time_rfc3339();
     // Posunuti se v paketu o ethernetovou hlavicku
-    const u_char *packetIP = packet + ETH_HEADER;
+    const u_char *packetIP = packet + ETH_HDR;
 
     if(type == 0x0800){ //ipv4
         // Pretypovani zbytku paketu na ip hlavicku
@@ -567,9 +567,8 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
     else if (type == 0x0806) {   // arp
         // https://unix.superglobalmegacorp.com/BSD4.4/newsrc/netinet/if_ether.h.html
         // Posunuti se v paketu o ethernetovou hlavicku
-        const u_char *packetArp = packet + ETH_HEADER;
-        // Struktura, ktera ma svuj nazev a nemuze mit jiny
-        struct ether_arp *etherArp = (struct ether_arp *) packetArp;
+        //const u_char *packetArp = packet + ETH_HDR;
+        struct ether_arp *etherArp = (struct ether_arp *) packetIP;
 
         // Ziskani source IP a MAC adresy
         struct in_addr *srcIP = (struct in_addr *) etherArp->arp_spa;
